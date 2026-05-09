@@ -17,10 +17,6 @@ class soc_config extends uvm_object;
     int uart_stop_bit    = 0;  // 0=ONE_BIT, 1=ONE_FIVE_BIT, 2=TWO_BIT
     bit uart_disable_hw_handshake = 1;  // disable CTS/RTS, DTR/DSR handshake checking
 
-    // SPI VIP Config
-    int spi_data_width = 8;
-    bit spi_is_active  = 1;
-    
     // SPI Master VIP Config (Slave Role)
     bit spi_master_is_active = 1;
     bit enable_spi_master_vip = 1;
@@ -40,7 +36,6 @@ class soc_config extends uvm_object;
     // Enable flags
     bit enable_scoreboard = 1;
     bit enable_coverage   = 1;
-    bit enable_spi_vip    = 1;
     bit enable_i2c_vip    = 1;
     bit enable_gpio_vip   = 1;
 

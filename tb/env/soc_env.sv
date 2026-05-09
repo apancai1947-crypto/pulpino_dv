@@ -39,10 +39,10 @@ class soc_env extends uvm_env;
     svt_uart_agent_configuration dce_cfg;
     svt_uart_vif                 dce_vif;
 
-    // SPI VIP Agent
-    svt_spi_agent                spi_agent;
-    svt_spi_agent_configuration  spi_cfg;
-    svt_spi_vif                  spi_vif;
+    // SPI Master VIP Agent (Slave Role)
+    svt_spi_agent                spi_master_agent;
+    svt_spi_agent_configuration  spi_master_cfg;
+    svt_spi_vif                  spi_master_vif;
 
     // I2C VIP Agent
     svt_i2c_master_agent         i2c_agent;
@@ -83,8 +83,9 @@ class soc_env extends uvm_env;
             `uvm_fatal("ENV", "Failed to get dce_vif")
 
         // Get SPI/I2C/GPIO VIP virtual interfaces
-        if (cfg.enable_spi_vip && !uvm_config_db#(svt_spi_vif)::get(this, "", "spi_vif", spi_vif))
-            `uvm_fatal("ENV", "Failed to get spi_vif")
+        // Get SPI Master VIP virtual interface
+        if (cfg.enable_spi_master_vip && !uvm_config_db#(svt_spi_vif)::get(this, "", "spi_master_vif", spi_master_vif))
+            `uvm_fatal("ENV", "Failed to get spi_master_vif")
         if (cfg.enable_i2c_vip && !uvm_config_db#(svt_i2c_vif)::get(this, "", "i2c_vif", i2c_vif))
             `uvm_fatal("ENV", "Failed to get i2c_vif")
         if (cfg.enable_gpio_vip && !uvm_config_db#(svt_gpio_vif)::get(this, "", "gpio_vif", gpio_vif))
@@ -137,14 +138,23 @@ class soc_env extends uvm_env;
         uvm_config_db#(svt_uart_agent_configuration)::set(this, "dce_agent", "cfg", dce_cfg);
         dce_agent = svt_uart_agent::type_id::create("dce_agent", this);
 
-        // SPI VIP Setup
-        if (cfg.enable_spi_vip) begin
-            spi_cfg = svt_spi_agent_configuration::type_id::create("spi_cfg");
-            spi_cfg.is_active = cfg.spi_is_active;
-            spi_cfg.spi_if = spi_vif;
-            uvm_config_db#(svt_spi_agent_configuration)::set(this, "spi_agent", "cfg", spi_cfg);
-            spi_agent = svt_spi_agent::type_id::create("spi_agent", this);
-            `uvm_info("ENV", "SPI Agent created", UVM_LOW)
+        // SPI Master VIP Setup (Slave Role - simulating Flash)
+        if (cfg.enable_spi_master_vip) begin
+            spi_master_cfg = svt_spi_agent_configuration::type_id::create("spi_master_cfg");
+            spi_master_cfg.is_active = cfg.spi_master_is_active;
+            spi_master_cfg.spi_if = spi_master_vif;
+            
+            // Set role to Slave (since it connects to DUT Master)
+            spi_master_cfg.is_master = 0;
+            
+            // Enable QSPI/Multilane mode if requested
+            if (cfg.enable_qspi_mode) begin
+                spi_master_cfg.frame_format = svt_spi_types::SPI_MULTILANE;
+            end
+
+            uvm_config_db#(svt_spi_agent_configuration)::set(this, "spi_master_agent", "cfg", spi_master_cfg);
+            spi_master_agent = svt_spi_agent::type_id::create("spi_master_agent", this);
+            `uvm_info("ENV", "SPI Master Agent created", UVM_LOW)
         end
 
         // I2C VIP Setup

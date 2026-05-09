@@ -55,15 +55,15 @@ module tb_top;
     logic        spi_cs_i  = 1'b1;
     logic [1:0]  spi_mode_o;
     logic        spi_sdo0_o, spi_sdo1_o, spi_sdo2_o, spi_sdo3_o;
-    logic        spi_sdi0_i = 1'b0, spi_sdi1_i = 1'b0, spi_sdi2_i = 1'b0, spi_sdi3_i = 1'b0;
+    logic        spi_sdi0_i, spi_sdi1_i, spi_sdi2_i, spi_sdi3_i;
 
     // SPI Master
     logic        spi_master_clk_o;
     logic        spi_master_csn0_o, spi_master_csn1_o, spi_master_csn2_o, spi_master_csn3_o;
     logic [1:0]  spi_master_mode_o;
     logic        spi_master_sdo0_o, spi_master_sdo1_o, spi_master_sdo2_o, spi_master_sdo3_o;
-    logic        spi_master_sdi0_i, spi_master_sdi1_i = 1'b0;
-    logic        spi_master_sdi2_i = 1'b0, spi_master_sdi3_i = 1'b0;
+    logic        spi_master_sdi0_i, spi_master_sdi1_i;
+    logic        spi_master_sdi2_i, spi_master_sdi3_i;
 
     // I2C
     logic scl_pad_i, scl_pad_o, scl_padoen_o;
@@ -313,11 +313,19 @@ module tb_top;
     // UART Connections
     assign uart_probe.tx = uart_tx;
 
-    // SPI Master Connections
+    // SPI Master Connections (QSPI 4-bit)
     assign spi_master_vif.sclk    = spi_master_clk_o;
     assign spi_master_vif.ss_n[0] = spi_master_csn0_o;
-    assign spi_master_vif.mosi    = spi_master_sdo0_o;
-    assign spi_master_sdi0_i      = spi_master_vif.miso;
+    
+    assign spi_master_vif.mosi[0] = spi_master_sdo0_o;
+    assign spi_master_vif.mosi[1] = spi_master_sdo1_o;
+    assign spi_master_vif.mosi[2] = spi_master_sdo2_o;
+    assign spi_master_vif.mosi[3] = spi_master_sdo3_o;
+    
+    assign spi_master_sdi0_i      = spi_master_vif.miso[0];
+    assign spi_master_sdi1_i      = spi_master_vif.miso[1];
+    assign spi_master_sdi2_i      = spi_master_vif.miso[2];
+    assign spi_master_sdi3_i      = spi_master_vif.miso[3];
 
     // I2C Connections (Bi-directional)
     assign i2c_master_vif.SCL = !scl_padoen_o ? scl_pad_o : 1'bz;
@@ -334,7 +342,7 @@ module tb_top;
     initial begin
         // Pass virtual interfaces to UVM components via config_db
         uvm_config_db#(virtual interface uart_if)::set(null, "*", "uart_vif", uart_probe);
-        uvm_config_db#(virtual svt_spi_if)::set(null, "uvm_test_top.env", "spi_vif", spi_master_vif);
+        uvm_config_db#(virtual svt_spi_if)::set(null, "uvm_test_top.env", "spi_master_vif", spi_master_vif);
         uvm_config_db#(virtual svt_i2c_if)::set(null, "uvm_test_top.env", "i2c_vif", i2c_master_vif);
         uvm_config_db#(virtual svt_gpio_if)::set(null, "uvm_test_top.env", "gpio_vif", gpio_vif);
         uvm_config_db#(virtual interface axi_if)::set(null, "*", "core_axi_vif",  core_axi);
