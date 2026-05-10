@@ -20,7 +20,8 @@
       "Bash(cmd:*)",
       "Bash(make CTEST=tc_uart_hello OUT=./build/tc_uart_hello all)",
       "Bash(ls:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(python3 -c ':*)"
     ]
   }
 }
