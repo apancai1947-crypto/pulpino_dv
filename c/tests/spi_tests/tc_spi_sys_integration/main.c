@@ -7,7 +7,6 @@
  *   TEST_MODE : 0=Reset defaults, 1=UART+SPI concurrent, 2=Pin mux (default: 0)
  */
 #include "spi.h"
-#include "uart.h"
 #include "common_macro.h"
 
 #ifndef TEST_MODE
@@ -31,7 +30,6 @@ static int check_reg(const char *name, unsigned int addr, unsigned int expected,
 int main() {
     int errors = 0;
 
-    uart_init();
     printf("INFO:UVM_INFO: [FW] SPI Sys Integration Test started. MODE=%d\n", TEST_MODE);
 
 #if TEST_MODE == 0

@@ -1,13 +1,10 @@
 #include "spi.h"
-#include "uart.h"
 #include "common_macro.h"
 
 int main() {
     int i;
     int test_data[4] = {0x11223344, 0x55667788, 0x99AABBCC, 0xDDEEFF00};
     
-    // 1. 初始化 UART，用于打印调试信息
-    uart_init();
     printf("INFO:UVM_INFO: [FW] QSPI Master Write Test started.\n");
 
     // 设置 SPI 分频，确保时钟速率适中 (sys_clk / (2*(10+1)))

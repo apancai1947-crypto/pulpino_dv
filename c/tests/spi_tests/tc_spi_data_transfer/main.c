@@ -9,7 +9,6 @@
  *   DATA_PATTERN  : 0=increment, 1=all-zero, 2=all-one, 3=random (default: 0)
  */
 #include "spi.h"
-#include "uart.h"
 #include "common_macro.h"
 
 #ifndef SPI_CMD_TYPE
@@ -62,7 +61,6 @@ int main() {
     int datalen_bits = DATA_WORDS * 32;
     int is_write = (SPI_CMD_TYPE == SPI_CMD_WR || SPI_CMD_TYPE == SPI_CMD_QWR);
 
-    uart_init();
     printf("INFO:UVM_INFO: [FW] SPI Data Transfer Test started.\n");
     printf("INFO:UVM_INFO: [FW] CMD=%s  WORDS=%d  PATTERN=%d\n",
            cmd_name(SPI_CMD_TYPE), DATA_WORDS, DATA_PATTERN);
