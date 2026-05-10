@@ -48,6 +48,7 @@ class Test(metaclass=InheritableMeta):
     build = None
     prerun_script = ""
     postrun_script = ""
+    extra_make_opt = ""
 
     @classmethod
     def get_prerun_script(cls, out_dir):
@@ -64,7 +65,7 @@ class Test(metaclass=InheritableMeta):
             fw_out = f"{out_dir}/{cls.name}/fw"
             proj_root = os.path.normpath(os.path.join(out_dir, ".."))
             c_dir = os.path.join(proj_root, "c")
-            cmd = f"make -C {c_dir} CTEST={cls.c_test} OUT={fw_out} all"
+            cmd = f"make -C {c_dir} CTEST={cls.c_test} OUT={fw_out} {cls.extra_make_opt} all"
             if cls.c_defines:
                 defines = " ".join(f"-D{k}={v}" for k, v in cls.c_defines.items())
                 cmd += f' EXTRA_CFLAGS="{defines}"'

@@ -285,24 +285,62 @@ module tb_top;
     // Boot Sequence
     // ============================================
     initial begin
-        $display("[TB] Using %0s core", USE_ZERO_RISCY ? "zero-riscy" : "riscy");
+        `uvm_info("BOOT", $sformatf("Using %0s core", USE_ZERO_RISCY ? "zero-riscy" : "riscy"), UVM_LOW)
 
         // Set boot address to 0x0 BEFORE reset release
+`ifndef SPI_BOOT_EN
         force dut.peripherals_i.apb_pulpino_i.boot_adr_q = 32'h0000_0000;
-        $display("[TB] Boot address forced to 0x00000000");
+        `uvm_info("BOOT", "Boot address forced to 0x00000000", UVM_LOW)
+`else
+        `uvm_info("BOOT", "SPI Boot Mode: Using default boot address 0x00008000 (Boot ROM)", UVM_LOW)
+`endif
 
         // Wait for reset release
         wait (rst_n === 1'b1);
         repeat(10) @(posedge clk);
 
+`ifndef SPI_BOOT_EN
         // Backdoor preload memory
         mem_preload();
+`else
+        `uvm_info("BOOT", "SPI Boot Mode: Skipping backdoor memory preload", UVM_LOW)
+`endif
 
         repeat(10) @(posedge clk);
 
         // Enable fetch to start CPU execution
         fetch_enable = 1'b1;
-        $display("[TB] fetch_enable asserted. CPU starting...");
+        `uvm_info("BOOT", "fetch_enable asserted. CPU starting...", UVM_LOW)
+
+    end
+
+    // ============================================
+    // PC Tracing for Debug
+    // ============================================
+    initial begin
+`ifdef TRACE_PC
+            forever @(posedge clk) begin比如说，在执行任务之前，需要注意以下几点：
+
+1. 环境与预处理
+   (a) 需要 remove 掉 debug 目录下的编译文件
+   (b) 仿真需要在 Docker 里面运行
+
+2. 进度与计划
+   (a) 当前任务处理到什么阶段
+   (b) 还剩余什么任务
+   (c) 接下去任务可能的探索方向有哪一些
+                if (dut.core_region_i.CORE.RISCV_CORE.instr_req_o && dut.core_region_i.CORE.RISCV_CORE.instr_gnt_i) begin
+                    logic [31:0] cur_pc;
+                    cur_pc = dut.core_region_i.CORE.RISCV_CORE.pc_if;
+                    @(posedge clk);
+                    while (!dut.core_region_i.CORE.RISCV_CORE.instr_rvalid_i) @(posedge clk);
+                    $display("[TRACE_PC] @ %t | PC: 0x%08h | Instr: 0x%08h | ra: 0x%08h", 
+                         $time, cur_pc, 
+                         dut.core_region_i.CORE.RISCV_CORE.instr_rdata_i,
+                         dut.core_region_i.CORE.RISCV_CORE.id_stage_i.registers_i.mem[1]);
+                end
+            end
+`endif
     end
 
     // ============================================
@@ -321,25 +359,6 @@ module tb_top;
 
     // UART Connections
     assign uart_probe.tx = uart_tx;
-
-    // Debug: SPI SCLK counter
-    int sclk_debug_cnt;
-    always @(posedge spi_master_clk_o or negedge spi_master_clk_o) begin
-        if (!spi_master_csn0_o) begin
-            sclk_debug_cnt++;
-            $display("[DEBUG_TB] @%0t: SCLK edge detected, count=%0d", $time, sclk_debug_cnt);
-        end
-        else sclk_debug_cnt = 0;
-    end
-    always @(posedge spi_master_csn0_o) begin
-        $display("[DEBUG_TB] @%0t: SPI CSN0 went high. SCLK edges seen: %0d", $time, sclk_debug_cnt);
-    end
-    always @(spi_master_clk_o) begin
-        $display("[DEBUG_TB] @%0t: SPI SCLK changed to %b", $time, spi_master_clk_o);
-    end
-    always @(spi_master_sdo0_o) begin
-        $display("[DEBUG_TB] @%0t: SPI MOSI changed to %b", $time, spi_master_sdo0_o);
-    end
 
     // SPI Master Connections (QSPI 4-bit)
 `ifdef SPI_VIP_EN

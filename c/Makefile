@@ -39,6 +39,14 @@ OUT      ?= ./build/$(CTEST)
 # PRJ_ROOT：当前目录的绝对路径，用于构建其他路径
 PRJ_ROOT = $(abspath .)
 
+# BOOT_MODE：是否生成 SPI Boot 镜像 (1 为是)
+BOOT_MODE ?= 0
+ifeq ($(BOOT_MODE), 1)
+    BOOT_IMAGE = $(OUT)/boot_image.memh
+else
+    BOOT_IMAGE =
+endif
+
 # ---------------------------------------------------------------------------
 # 头文件路径
 # ---------------------------------------------------------------------------
@@ -100,7 +108,7 @@ LDFLAGS = -nostartfiles -nostdlib -T $(LINK_LD)
 # 默认目标：编译固件，生成所有产物
 # 执行顺序：prepare → firmware.elf → firmware.hex → firmware.slm
 #                                  └→ firmware.dump
-all: prepare $(OUT)/firmware.hex $(OUT)/firmware.dump $(OUT)/firmware.slm
+all: prepare $(OUT)/firmware.hex $(OUT)/firmware.dump $(OUT)/firmware.slm $(BOOT_IMAGE)
 
 # 创建输出目录
 prepare:
@@ -135,6 +143,19 @@ $(OUT)/firmware.dump: $(OUT)/firmware.elf
 $(OUT)/firmware.slm: $(OUT)/firmware.hex
 	@echo "[HEX2SLM] Converting to SLM format..."
 	python3 $(PRJ_ROOT)/hex2slm.py $(OUT)/firmware.hex $(OUT)/firmware.slm
+
+# 步骤 5：生成 SPI Boot 镜像（仅当 BOOT_MODE=1 时）
+$(OUT)/instr.bin: $(OUT)/firmware.elf
+	@echo "[OBJCOPY] Extracting instructions (.text + .rodata)..."
+	$(OBJCOPY) -O binary -j .text -j .rodata $< $@
+
+$(OUT)/data.bin: $(OUT)/firmware.elf
+	@echo "[OBJCOPY] Extracting data (.data)..."
+	$(OBJCOPY) -O binary -j .data $< $@
+
+$(OUT)/boot_image.memh: $(OUT)/instr.bin $(OUT)/data.bin
+	@echo "[ELF2FLASH] Packaging SPI Boot Image..."
+	python3 $(PRJ_ROOT)/elf2flash.py $(OUT)/instr.bin $(OUT)/data.bin $@
 
 # 打印当前编译配置（用于调试 Makefile 变量）
 info:

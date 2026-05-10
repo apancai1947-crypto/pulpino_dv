@@ -117,7 +117,7 @@ fw:
 	@echo "[GCC] Compiling firmware CTEST=$(CTEST) → $(FW_OUT)..."
 	@rm -rf $(FW_OUT)
 	@mkdir -p $(FW_OUT)
-	$(MAKE) -C $(PROJ_ROOT)/c OUT=$(FW_OUT) CTEST=$(CTEST) all
+	$(MAKE) -C $(PROJ_ROOT)/c OUT=$(FW_OUT) CTEST=$(CTEST) BOOT_MODE=$(BOOT_MODE) all
 	@cp $(FW_OUT)/firmware.slm $(FW_OUT)/l2_stim.slm
 	@echo "@00000000 00000000" > $(FW_OUT)/tcdm_bank0.slm
 

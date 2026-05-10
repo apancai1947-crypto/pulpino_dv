@@ -279,6 +279,7 @@ seq_lib/uart_dce_rx_sequence.sv
 tests/base_test.sv
 tests/pulpino_uart_test.sv
 tests/pulpino_spi_test.sv
+tests/pulpino_spi_boot_test.sv
 
 // Testbench top
 tb/tb_top.sv

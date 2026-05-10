@@ -167,18 +167,27 @@ class soc_env extends uvm_env;
         // SPI Master VIP Setup (Passive Slave Monitor - listening to PULPino SPI Master)
         if (cfg.enable_spi_master_vip) begin
             spi_master_cfg = svt_spi_agent_configuration::type_id::create("spi_master_cfg");
-            spi_master_cfg.is_active     = 0;           // Passive monitor
-            spi_master_cfg.is_master     = 0;           // Slave role: monitors Master output
             spi_master_cfg.spi_if        = spi_master_vif;
+            spi_master_cfg.is_master     = 0;           // Slave role
 
+`ifdef SPI_BOOT_EN
+            spi_master_cfg.is_active     = 1;           // Active Slave
+            spi_master_cfg.frame_format  = svt_spi_types::SPI_FLASH;
+            spi_master_cfg.enable_mem_core = 1;
+            spi_master_cfg.spi_mem_cfg = new("spi_mem_cfg");
+            `uvm_info("ENV", "SPI Master Agent configured as ACTIVE FLASH SLAVE (SPI Boot Mode)", UVM_LOW)
+`else
+            spi_master_cfg.is_active     = 0;           // Passive monitor
             // Standard SPI mode (not Flash): must set frame_format explicitly
             spi_master_cfg.frame_format  = svt_spi_types::SPI_STD;
+            `uvm_info("ENV", "SPI Master Agent configured as PASSIVE MONITOR (STD mode)", UVM_LOW)
+`endif
             // SPI Mode 0: CPOL=0, CPHA=0
             spi_master_cfg.operation_mode = svt_spi_types::SPI_MODE_0;
             // Enable configurable frame width (REQUIRED or data_frame_width has no effect)
             spi_master_cfg.enable_configurable_data_frame_width = 1;
-            // PULPino CMD phase uses a separate register (not SCLK), only DATA=32bits on MOSI
-            spi_master_cfg.data_frame_width  = 32;
+            // PULPino CMD phase uses a separate register (not SCLK), only DATA=8bits on MOSI
+            spi_master_cfg.data_frame_width  = 8;
             // PULPino transmits MSB-first; set BIG_ENDIAN so VIP stores data[0] correctly
             spi_master_cfg.bit_endianness    = svt_spi_types::BIG_ENDIAN;
 
@@ -187,7 +196,6 @@ class soc_env extends uvm_env;
 
             uvm_config_db#(svt_spi_agent_configuration)::set(this, "spi_master_agent", "cfg", spi_master_cfg);
             spi_master_agent = svt_spi_agent::type_id::create("spi_master_agent", this);
-            `uvm_info("ENV", "SPI Master Agent created (passive, STD mode, 40-bit frame)", UVM_LOW)
         end
 
         // SPI Slave VIP Setup (Master Role - simulating Host)

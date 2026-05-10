@@ -16,11 +16,17 @@ class spi_base_build(Build):
         "-timescale=1ns/1ps "
         "+define+SVT_SPI_IO_WIDTH=4 "
         "+define+SVT_SPI_MAX_NUM_SLAVES=4 "
-        "+define+SVT_SPI_DATA_WIDTH=32 "
+        "+define+SVT_SPI_DATA_WIDTH=8 "
         "+define+SPI_VIP_EN "
     )
     elab_opt = "-debug_access+pp"
     simulator = "vcs"
+
+
+class spi_boot_build(spi_base_build):
+    name = "spi_boot"
+    tag = ["spi", "boot"]
+    vlog_opt = spi_base_build.vlog_opt + "+define+SPI_BOOT_EN +define+TRACE_PC "
 
 
 # ===== Test 层 =====
@@ -78,6 +84,18 @@ class tc_spi_qrd_4word(spi_base_test):
     tag += ["data_transfer", "read", "qspi", "p1"]
     c_test = "tc_spi_data_transfer"
     c_defines = {"SPI_CMD_TYPE": 2, "DATA_WORDS": 4, "DATA_PATTERN": 0}
+
+
+# ----- SPI Boot Test -----
+
+class tc_spi_boot(spi_base_test):
+    name = "tc_spi_boot"
+    tag = ["spi", "boot", "p0"]
+    build = spi_boot_build
+    uvm_test = "pulpino_spi_boot_test"
+    c_test = "tc_spi_boot"
+    extra_make_opt = "BOOT_MODE=1"
+    sim_opt = "+TIMEOUT_NS=20000000"
 
 
 class tc_spi_qwr_all_zero(spi_base_test):
