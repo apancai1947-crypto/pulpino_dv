@@ -125,3 +125,139 @@ end
 | **数据位宽报错 `must be less than or equal to Macro`** | 编译时的 `+define+SVT_SPI_DATA_WIDTH` 过小，调大宏定义。 |
 | **收到的数据值按位完全翻转** (`0x00000001` 变 `0x80000000`) | 字节序问题。在 config 中添加 `spi_cfg.bit_endianness = svt_spi_types::BIG_ENDIAN`。 |
 | **Scoreboard / FIFO 收到全 `0` 数据** | 监听了错误的端口。Slave 角色应只听 `rx_xact_observed_port` (MOSI)。 |
+| **Flash 模式 READ_ID 返回全 `0`** | 必须先加载 catalog（见 §7），仅设置 `mode_register_cfg` 字段无效。 |
+
+---
+
+## 7. SPI Flash 模式集成指南（Boot 场景）
+
+当 DUT 的 SPI Master 需要从外部 Flash 读取固件（SPI Boot）时，VIP 必须配置为 **Active Flash Slave** 模式，模拟一个 NOR Flash 芯片（如 Spansion S25FL128S）。
+
+### 7.1 基本配置
+
+```systemverilog
+spi_cfg = svt_spi_agent_configuration::type_id::create("spi_cfg");
+spi_cfg.is_active     = 1;                          // Active Slave（需要响应 DUT 请求）
+spi_cfg.is_master     = 0;                          // Slave 角色
+spi_cfg.frame_format  = svt_spi_types::SPI_FLASH;   // Flash 协议模式（非 SPI_STD）
+spi_cfg.enable_mem_core = 1;                         // 启用内部 Flash 存储模型
+spi_cfg.spi_mem_cfg = new("spi_mem_cfg");            // 必须手动创建 mem_cfg 对象
+```
+
+**注意**：`SPI_FLASH` 模式与 `SPI_STD` 模式完全不同。Flash 模式下 VIP 会解析 Flash 命令（READ_ID、READ、WRITE、ERASE 等），而 STD 模式只做原始 SPI 数据传输。
+
+### 7.2 Flash ID 配置（关键踩坑）
+
+#### 问题现象
+
+直接设置 `mode_register_cfg` 的 4 个 ID 字段，VIP 仍然返回全零：
+
+```systemverilog
+// ❌ 这样写不生效！
+spi_cfg.spi_mem_cfg.mode_register_cfg.manufacturer_id = 8'h01;
+spi_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_type = 8'h02;
+// ... 仿真中 READ_ID 仍然返回 0x00000000
+```
+
+#### 根因
+
+VIP 的 `mem_core`（加密 IP）内部的 Flash 命令解码器和 ID 响应逻辑需要通过 **catalog 系统** 初始化。仅设置 `mode_register_cfg` 字段不够——catalog 加载过程会初始化大量内部状态（命令映射表、时序模型、SFDP 数据等），这些是 mem_core 正确工作的前提。
+
+#### 正确做法：先加载 catalog，再覆盖 ID
+
+```systemverilog
+spi_cfg.spi_mem_cfg = new("spi_mem_cfg");
+
+// 第 1 步：加载 catalog（建立 Flash 内部模型）
+begin
+    string dw_home = $getenv("DESIGNWARE_HOME");
+    if (dw_home.len() == 0) dw_home = "/opt/sv_pkgs/designware_home";
+    spi_cfg.spi_mem_cfg.load_prop_vals(
+        {dw_home, "/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_HPLC.cfg"}
+    );
+end
+
+// 第 2 步：覆盖 ID 字段为目标芯片的值
+spi_cfg.spi_mem_cfg.mode_register_cfg.manufacturer_id        = 8'h01;  // Spansion
+spi_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_type  = 8'h02;  // SPI NOR
+spi_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_capacity = 8'h19;  // 256Mb
+spi_cfg.spi_mem_cfg.mode_register_cfg.device_id              = 8'h4D;  // Extended ID
+```
+
+**关键经验**：VIP catalog 中 **没有** S25FL128S 条目（只有 S25FL512S 变体）。必须用 S25FL512S catalog 作为基础，再覆盖 ID 字段。
+
+#### READ_ID 响应字节顺序
+
+当 DUT 发送 `0x9F`（READ_ID）命令时，VIP 按以下顺序返回 4 字节：
+
+| 响应字节 | 来源字段 | S25FL128S 值 |
+| :--- | :--- | :--- |
+| Byte 0 | `manufacturer_id` | `0x01` |
+| Byte 1 | `device_id_memory_type` | `0x02` |
+| Byte 2 | `device_id_memory_capacity` | `0x19` |
+| Byte 3 | `device_id` | `0x4D` |
+
+组合后 DUT 收到的 32-bit 值为 `0x0102194D`。
+
+### 7.3 Catalog 文件结构
+
+Catalog `.cfg` 文件位于 `$DESIGNWARE_HOME/vip/svt/spi_svt/latest/catalog/spi/nor/<Vendor>/`。
+
+关键字段使用 `@mode_register_cfg` 后缀表示属于 `mode_register_cfg` 子对象：
+
+```ini
+catalog_part_number=S25FL512S_HPLC
+catalog_device_family=S25FL
+catalog_vendor=SPANSION
+catalog_class=SPI_FLASH
+manufacturer_id@mode_register_cfg=01
+device_id@mode_register_cfg=19
+# id_cfi 数组也包含 ID 信息（CFI/SFDP 空间）
+id_cfi[0]@mode_register_cfg=01
+id_cfi[1]@mode_register_cfg=02
+id_cfi[2]@mode_register_cfg=20
+```
+
+**可用的 Spansion catalog**（仅 S25FL512S 变体）：
+- `S25FL512S_HPLC.cfg` — 512Mb, 3V, 133MHz（推荐）
+- `S25FL512S_EHPLC.cfg` — 增强型
+- 其他 DDR/VIO 变体
+
+### 7.4 Boot 测试的完整 Agent 配置
+
+```systemverilog
+`ifdef SPI_BOOT_EN
+    spi_cfg.is_active     = 1;
+    spi_cfg.frame_format  = svt_spi_types::SPI_FLASH;
+    spi_cfg.enable_mem_core = 1;
+    spi_cfg.spi_mem_cfg = new("spi_mem_cfg");
+
+    // 加载 Spansion catalog
+    begin
+        string dw_home = $getenv("DESIGNWARE_HOME");
+        if (dw_home.len() == 0) dw_home = "/opt/sv_pkgs/designware_home";
+        spi_cfg.spi_mem_cfg.load_prop_vals(
+            {dw_home, "/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_HPLC.cfg"}
+        );
+    end
+
+    // 覆盖 Flash ID 为 S25FL128S
+    spi_cfg.spi_mem_cfg.mode_register_cfg.manufacturer_id        = 8'h01;
+    spi_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_type  = 8'h02;
+    spi_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_capacity = 8'h19;
+    spi_cfg.spi_mem_cfg.mode_register_cfg.device_id              = 8'h4D;
+`endif
+```
+
+### 7.5 Flash 数据预加载
+
+Boot 测试需要将固件镜像预加载到 VIP 的 Flash 存储中：
+
+```systemverilog
+// 在 UVM test 的 run_phase 中
+if (env.spi_master_agent != null && env.spi_master_agent.mem_sequencer != null) begin
+    void'(env.spi_master_agent.mem_sequencer.backdoor.load("fw/boot_image.memh", 0));
+end
+```
+
+`boot_image.memh` 由 `c/elf2flash.py` 生成，格式为每行一个十六进制字节（byte-per-line），小端序头部。

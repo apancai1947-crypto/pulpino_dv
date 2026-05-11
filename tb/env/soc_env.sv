@@ -175,7 +175,32 @@ class soc_env extends uvm_env;
             spi_master_cfg.frame_format  = svt_spi_types::SPI_FLASH;
             spi_master_cfg.enable_mem_core = 1;
             spi_master_cfg.spi_mem_cfg = new("spi_mem_cfg");
+            // Load Spansion S25FL catalog (sets up flash model internals, timings, etc.)
+            begin
+                string catalog_path;
+                int fd;
+                // Try known DESIGNWARE_HOME paths (VCS 2018.09 has no $getenv)
+                catalog_path = "/usr/Synopsys/vip_2018_09/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_HPLC.cfg";
+                fd = $fopen(catalog_path, "r");
+                if (fd)
+                    $fclose(fd);
+                else
+                    catalog_path = "/opt/sv_pkgs/designware_home/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_HPLC.cfg";
+                spi_master_cfg.spi_mem_cfg.load_prop_vals(catalog_path);
+                `uvm_info("ENV", $sformatf("Loaded Spansion catalog from: %s", catalog_path), UVM_LOW)
+            end
+            // Override Flash ID for S25FL128S (boot_code.c expects rd_id[0]=0x0102194D)
+            // Response byte order: manufacturer_id, device_id_memory_type, device_id_memory_capacity, device_id
+            spi_master_cfg.spi_mem_cfg.mode_register_cfg.manufacturer_id        = 8'h01;
+            spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_type  = 8'h02;
+            spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_capacity = 8'h19;
+            spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id              = 8'h4D;
             `uvm_info("ENV", "SPI Master Agent configured as ACTIVE FLASH SLAVE (SPI Boot Mode)", UVM_LOW)
+            `uvm_info("ENV", $sformatf("Flash ID cfg: mfr=0x%02h type=0x%02h cap=0x%02h dev=0x%02h",
+                spi_master_cfg.spi_mem_cfg.mode_register_cfg.manufacturer_id,
+                spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_type,
+                spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_capacity,
+                spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id), UVM_LOW)
 `else
             spi_master_cfg.is_active     = 0;           // Passive monitor
             // Standard SPI mode (not Flash): must set frame_format explicitly

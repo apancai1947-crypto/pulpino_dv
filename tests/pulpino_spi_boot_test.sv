@@ -29,10 +29,8 @@ class pulpino_spi_boot_test extends base_test;
         // Usually backdoor load can happen at T=0
 `ifdef SPI_VIP_EN
         if (env.spi_master_agent != null && env.spi_master_agent.mem_sequencer != null) begin
-            // Use the backdoor load from the memory sequencer
-            // Try to find the file in multiple locations (ignore failures as we try multiple)
-            void'(env.spi_master_agent.mem_sequencer.backdoor.load("../../c/build/tc_spi_boot/boot_image.memh", 0));
-            void'(env.spi_master_agent.mem_sequencer.backdoor.load("boot_image.memh", 0));
+            // Load boot image into SPI VIP memory (sim CWD is debug/tc_spi_boot/)
+            void'(env.spi_master_agent.mem_sequencer.backdoor.load("fw/boot_image.memh", 0));
         end
 `endif
 

@@ -315,20 +315,29 @@ module tb_top;
     end
 
     // ============================================
+    // SPI APB Monitor (Boot Debug)
+    // Monitors APB writes to SPI Master address range (0x1A100000)
+    // SPI Master APB base = 0x1A100000, PADDR[11:0] used internally
+    // ============================================
+`ifdef SPI_BOOT_EN
+    initial begin
+        forever begin
+            @(posedge clk);
+            if (apb_bus.psel && apb_bus.penable && apb_bus.pwrite &&
+                apb_bus.paddr[31:12] == 20'h1A100) begin
+                `uvm_info("SPI_APB", $sformatf("WR addr=0x%08h data=0x%08h",
+                    apb_bus.paddr, apb_bus.pwdata), UVM_LOW)
+            end
+        end
+    end
+`endif
+
+    // ============================================
     // PC Tracing for Debug
     // ============================================
     initial begin
 `ifdef TRACE_PC
-            forever @(posedge clk) begin比如说，在执行任务之前，需要注意以下几点：
-
-1. 环境与预处理
-   (a) 需要 remove 掉 debug 目录下的编译文件
-   (b) 仿真需要在 Docker 里面运行
-
-2. 进度与计划
-   (a) 当前任务处理到什么阶段
-   (b) 还剩余什么任务
-   (c) 接下去任务可能的探索方向有哪一些
+            forever @(posedge clk) begin
                 if (dut.core_region_i.CORE.RISCV_CORE.instr_req_o && dut.core_region_i.CORE.RISCV_CORE.instr_gnt_i) begin
                     logic [31:0] cur_pc;
                     cur_pc = dut.core_region_i.CORE.RISCV_CORE.pc_if;
