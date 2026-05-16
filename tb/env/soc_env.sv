@@ -177,17 +177,20 @@ class soc_env extends uvm_env;
             spi_master_cfg.spi_mem_cfg = new("spi_mem_cfg");
             // Load Spansion S25FL catalog (sets up flash model internals, timings, etc.)
             begin
-                string catalog_path;
-                int fd;
-                // Try known DESIGNWARE_HOME paths (VCS 2018.09 has no $getenv)
-                catalog_path = "/usr/Synopsys/vip_2018_09/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_HPLC.cfg";
-                fd = $fopen(catalog_path, "r");
-                if (fd)
-                    $fclose(fd);
-                else
-                    catalog_path = "/opt/sv_pkgs/designware_home/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_HPLC.cfg";
-                spi_master_cfg.spi_mem_cfg.load_prop_vals(catalog_path);
-                `uvm_info("ENV", $sformatf("Loaded Spansion catalog from: %s", catalog_path), UVM_LOW)
+                string dw_home;
+                dw_home = $getenv("DESIGNWARE_HOME");
+                if (dw_home.len() == 0) begin
+                    // Fallback: probe known paths
+                    int fd;
+                    dw_home = "/usr/Synopsys/vip_2018_09";
+                    fd = $fopen({dw_home, "/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_HPLC.cfg"}, "r");
+                    if (fd)
+                        $fclose(fd);
+                    else
+                        dw_home = "/opt/sv_pkgs/designware_home";
+                end
+                spi_master_cfg.spi_mem_cfg.load_prop_vals({dw_home, "/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_HPLC.cfg"});
+                `uvm_info("ENV", $sformatf("Loaded Spansion catalog from: %s", {dw_home, "/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_HPLC.cfg"}), UVM_LOW)
             end
             // Override Flash ID for S25FL128S (boot_code.c expects rd_id[0]=0x0102194D)
             // Response byte order: manufacturer_id, device_id_memory_type, device_id_memory_capacity, device_id
