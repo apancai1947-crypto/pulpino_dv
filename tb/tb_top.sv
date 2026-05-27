@@ -65,9 +65,9 @@ module tb_top;
     logic        spi_master_clk_o;
     logic        spi_master_csn0_o, spi_master_csn1_o, spi_master_csn2_o, spi_master_csn3_o;
     logic [1:0]  spi_master_mode_o;
-    logic        spi_master_sdo0_o, spi_master_sdo1_o, spi_master_sdo2_o, spi_master_sdo3_o;
-    logic        spi_master_sdi0_i, spi_master_sdi1_i;
-    logic        spi_master_sdi2_i, spi_master_sdi3_i;
+    wire         spi_master_sdo0_o, spi_master_sdo1_o, spi_master_sdo2_o, spi_master_sdo3_o;
+    wire         spi_master_sdi0_i, spi_master_sdi1_i;
+    wire         spi_master_sdi2_i, spi_master_sdi3_i;
 
     // I2C
     logic scl_pad_i, scl_pad_o, scl_padoen_o;
@@ -255,11 +255,11 @@ module tb_top;
         string fw_imem_file, fw_dmem_file;
         int instr_size, data_size;
 
-        $display("[TB] Preloading memory...");
+        `uvm_info("TB", "Preloading memory...", UVM_LOW)
 
         instr_size = dut.core_region_i.instr_mem.sp_ram_wrap_i.RAM_SIZE;
         data_size  = dut.core_region_i.data_mem.RAM_SIZE;
-        $display("[TB] Instr RAM: %0d bytes, Data RAM: %0d bytes", instr_size, data_size);
+        `uvm_info("TB", $sformatf("Instr RAM: %0d bytes, Data RAM: %0d bytes", instr_size, data_size), UVM_LOW)
 
         if (!$value$plusargs("FW_SLMS=%s", fw_imem_file))
             fw_imem_file = "fw/l2_stim.slm";
@@ -267,18 +267,13 @@ module tb_top;
             fw_dmem_file = "fw/tcdm_bank0.slm";
 
         // Direct $readmemh into DUT memory (same format as original PULPino TB)
-        $display("[TB] Loading instruction memory from %0s", fw_imem_file);
+        `uvm_info("TB", $sformatf("Loading instruction memory from %0s", fw_imem_file), UVM_LOW)
         $readmemh(fw_imem_file, dut.core_region_i.instr_mem.sp_ram_wrap_i.sp_ram_i.mem);
 
-        $display("[TB] Loading data memory from %0s", fw_dmem_file);
+        `uvm_info("TB", $sformatf("Loading data memory from %0s", fw_dmem_file), UVM_LOW)
         $readmemh(fw_dmem_file, dut.core_region_i.data_mem.sp_ram_i.mem);
 
-        // Verify first few words
-        $display("[TB] Instr[0] = 0x%08h", dut.core_region_i.instr_mem.sp_ram_wrap_i.sp_ram_i.mem[0]);
-        $display("[TB] Instr[1] = 0x%08h", dut.core_region_i.instr_mem.sp_ram_wrap_i.sp_ram_i.mem[1]);
-        $display("[TB] Instr[2] = 0x%08h", dut.core_region_i.instr_mem.sp_ram_wrap_i.sp_ram_i.mem[2]);
-
-        $display("[TB] Memory preload complete.");
+        `uvm_info("TB", "Memory preload complete.", UVM_LOW)
     endtask
 
     // ============================================
@@ -292,7 +287,12 @@ module tb_top;
         force dut.peripherals_i.apb_pulpino_i.boot_adr_q = 32'h0000_0000;
         `uvm_info("BOOT", "Boot address forced to 0x00000000", UVM_LOW)
 `else
+  `ifdef SPI_DIRECT_BOOT
+        force dut.peripherals_i.apb_pulpino_i.boot_adr_q = 32'h0000_0000;
+        `uvm_info("BOOT", "SPI Direct Boot: Boot address forced to 0x00000000 (VIP flash active)", UVM_LOW)
+  `else
         `uvm_info("BOOT", "SPI Boot Mode: Using default boot address 0x00008000 (Boot ROM)", UVM_LOW)
+  `endif
 `endif
 
         // Wait for reset release
@@ -303,7 +303,12 @@ module tb_top;
         // Backdoor preload memory
         mem_preload();
 `else
-        `uvm_info("BOOT", "SPI Boot Mode: Skipping backdoor memory preload", UVM_LOW)
+  `ifdef SPI_DIRECT_BOOT
+        mem_preload();
+        `uvm_info("BOOT", "SPI Direct Boot: Backdoor memory preload enabled", UVM_LOW)
+  `else
+        `uvm_info("BOOT", "SPI Boot Mode: Skipping backdoor memory preload (using patched boot ROM)", UVM_LOW)
+  `endif
 `endif
 
         repeat(10) @(posedge clk);
@@ -315,18 +320,19 @@ module tb_top;
     end
 
     // ============================================
-    // SPI APB Monitor (Boot Debug)
-    // Monitors APB writes to SPI Master address range (0x1A100000)
-    // SPI Master APB base = 0x1A100000, PADDR[11:0] used internally
+    // SPI Boot Debug Monitors (limited volume)
     // ============================================
 `ifdef SPI_BOOT_EN
-    initial begin
+    initial begin : spi_apb_boot_trace
+        int spi_apb_write_count = 0;
+
         forever begin
             @(posedge clk);
             if (apb_bus.psel && apb_bus.penable && apb_bus.pwrite &&
-                apb_bus.paddr[31:12] == 20'h1A100) begin
-                `uvm_info("SPI_APB", $sformatf("WR addr=0x%08h data=0x%08h",
-                    apb_bus.paddr, apb_bus.pwdata), UVM_LOW)
+                apb_bus.paddr[31:12] == 20'h1A100 && spi_apb_write_count < 32) begin
+                `uvm_info("SPI_APB", $sformatf("WR[%0d] addr=0x%08h data=0x%08h",
+                    spi_apb_write_count, apb_bus.paddr, apb_bus.pwdata), UVM_LOW)
+                spi_apb_write_count++;
             end
         end
     end
@@ -343,10 +349,10 @@ module tb_top;
                     cur_pc = dut.core_region_i.CORE.RISCV_CORE.pc_if;
                     @(posedge clk);
                     while (!dut.core_region_i.CORE.RISCV_CORE.instr_rvalid_i) @(posedge clk);
-                    $display("[TRACE_PC] @ %t | PC: 0x%08h | Instr: 0x%08h | ra: 0x%08h", 
-                         $time, cur_pc, 
+                    `uvm_info("TRACE_PC", $sformatf("PC: 0x%08h | Instr: 0x%08h | ra: 0x%08h", 
+                         cur_pc, 
                          dut.core_region_i.CORE.RISCV_CORE.instr_rdata_i,
-                         dut.core_region_i.CORE.RISCV_CORE.id_stage_i.registers_i.mem[1]);
+                         dut.core_region_i.CORE.RISCV_CORE.id_stage_i.registers_i.mem[1]), UVM_LOW)
                 end
             end
 `endif
@@ -357,8 +363,8 @@ module tb_top;
     // ============================================
     uart_if     uart_probe ();
 `ifdef SPI_VIP_EN
-    svt_spi_if  spi_master_vif();
-    svt_spi_if  spi_slave_vif();
+    svt_spi_if  spi_master_vif(.bus_clk(clk), .reset(~rst_n));
+    svt_spi_if  spi_slave_vif(.bus_clk(clk), .reset(~rst_n));
 `endif
 `ifdef I2C_VIP_EN
     svt_i2c_if  i2c_master_vif();
@@ -373,16 +379,135 @@ module tb_top;
 `ifdef SPI_VIP_EN
     assign spi_master_vif.sclk    = spi_master_clk_o;
     assign spi_master_vif.ss_n[0] = spi_master_csn0_o;
+    assign spi_master_vif.Vcc     = 1'b1;
+    assign spi_master_vif.Vss     = 1'b0;
     
-    assign spi_master_vif.mosi[0] = spi_master_sdo0_o;
-    assign spi_master_vif.mosi[1] = spi_master_sdo1_o;
-    assign spi_master_vif.mosi[2] = spi_master_sdo2_o;
-    assign spi_master_vif.mosi[3] = spi_master_sdo3_o;
+    // ============================================
+    // SPI Pad Multiplexing for SVT SPI VIP (Flash Mode)
+    // ============================================
+    // PULPino outputs separated sdo (TX) and sdi (RX) with spi_master_mode_o.
+    // 2'b00: Standard SPI (MOSI=mosi[0], MISO=miso[0]).
+    // 2'b01: Quad SPI TX. Master TX on dq0-dq3.
+    // 2'b10: Quad SPI RX. Master RX on dq0-dq3.
+
+`ifdef SPI_BOOT_EN
+    // Flash-mode wiring follows the SVT SPI Flash IO convention:
+    // dq0 is SI/MOSI and dq1 is SO/MISO for standard SPI flash commands.
+    assign spi_master_vif.mosi[0] = 1'bz;
+    assign spi_master_vif.mosi[1] = 1'bz;
+    assign spi_master_vif.mosi[2] = 1'bz;
+    assign spi_master_vif.mosi[3] = 1'bz;
+
+    assign spi_master_vif.dq0 = (spi_master_mode_o == 2'b00 || spi_master_mode_o == 2'b01) ? spi_master_sdo0_o : 1'bz;
+    assign spi_master_vif.dq1 = (spi_master_mode_o == 2'b01) ? spi_master_sdo1_o : 1'bz;
+    assign spi_master_vif.dq2 = (spi_master_mode_o == 2'b01) ? spi_master_sdo2_o : 1'bz;
+    assign spi_master_vif.dq3 = (spi_master_mode_o == 2'b01) ? spi_master_sdo3_o : 1'bz;
+
+    assign spi_master_sdi0_i = (spi_master_mode_o == 2'b00) ? spi_master_vif.dq1 : spi_master_vif.dq0;
+    assign spi_master_sdi1_i = (spi_master_mode_o == 2'b00) ? 1'b0 : spi_master_vif.dq1;
+    assign spi_master_sdi2_i = (spi_master_mode_o == 2'b00) ? 1'b0 : spi_master_vif.dq2;
+    assign spi_master_sdi3_i = (spi_master_mode_o == 2'b00) ? 1'b0 : spi_master_vif.dq3;
+`else
+    // Standard SPI path: SVT flash model decodes READ_ID on mosi and drives miso.
+    assign spi_master_vif.mosi[0] = (spi_master_mode_o == 2'b00) ? spi_master_sdo0_o : 1'bz;
+    assign spi_master_vif.mosi[1] = 1'bz;
+    assign spi_master_vif.mosi[2] = 1'bz;
+    assign spi_master_vif.mosi[3] = 1'bz;
+
+    // Quad path: PULPino drives dq pins only during quad transmit phases.
+    assign spi_master_vif.dq0 = (spi_master_mode_o == 2'b01) ? spi_master_sdo0_o : 1'bz;
+    assign spi_master_vif.dq1 = (spi_master_mode_o == 2'b01) ? spi_master_sdo1_o : 1'bz;
+    assign spi_master_vif.dq2 = (spi_master_mode_o == 2'b01) ? spi_master_sdo2_o : 1'bz;
+    assign spi_master_vif.dq3 = (spi_master_mode_o == 2'b01) ? spi_master_sdo3_o : 1'bz;
     
-    assign spi_master_sdi0_i      = spi_master_vif.miso[0];
-    assign spi_master_sdi1_i      = spi_master_vif.miso[1];
-    assign spi_master_sdi2_i      = spi_master_vif.miso[2];
-    assign spi_master_sdi3_i      = spi_master_vif.miso[3];
+    // Route VIP response back to DUT inputs.
+    assign spi_master_sdi0_i = (spi_master_mode_o == 2'b00) ? spi_master_vif.miso[0] : spi_master_vif.dq0;
+    assign spi_master_sdi1_i = (spi_master_mode_o == 2'b00) ? 1'b0 : spi_master_vif.dq1;
+    assign spi_master_sdi2_i = (spi_master_mode_o == 2'b00) ? 1'b0 : spi_master_vif.dq2;
+    assign spi_master_sdi3_i = (spi_master_mode_o == 2'b00) ? 1'b0 : spi_master_vif.dq3;
+`endif
+
+`ifdef SPI_BOOT_EN
+    initial begin : spi_vip_pin_trace
+        int frame_count = 0;
+        int cs_event_count = 0;
+        int sclk_edge_count = 0;
+        int response_count = 0;
+        int frame_sclk_count = 0;
+        logic [31:0] read_id_response = '0;
+
+        fork
+            forever begin
+                @(spi_master_csn0_o);
+                if (cs_event_count < 16) begin
+                    `uvm_info("SPI_PIN_EVT", $sformatf("CS0[%0d]=%b mode=%0b sclk=%b sdo0=%b sdi0=%b",
+                        cs_event_count, spi_master_csn0_o, spi_master_mode_o,
+                        spi_master_clk_o, spi_master_sdo0_o, spi_master_sdi0_i), UVM_LOW)
+                    cs_event_count++;
+                end
+                if (spi_master_csn0_o === 1'b0) begin
+                    frame_sclk_count = 0;
+                    read_id_response = '0;
+                end
+            end
+
+            forever begin
+                @(posedge spi_master_clk_o);
+                if (sclk_edge_count < 96) begin
+                    `uvm_info("SPI_PIN_EVT", $sformatf("SCLK[%0d] cs0=%b mode=%0b mosi=%b miso=%b dq0=%b dq1=%b sdi0=%b",
+                        sclk_edge_count, spi_master_csn0_o, spi_master_mode_o,
+                        spi_master_vif.mosi[0], spi_master_vif.miso[0],
+                        spi_master_vif.dq0, spi_master_vif.dq1, spi_master_sdi0_i), UVM_LOW)
+                    sclk_edge_count++;
+                end
+                if (spi_master_csn0_o === 1'b0) begin
+                    if (frame_sclk_count >= 8 && frame_sclk_count < 40) begin
+                        read_id_response = {read_id_response[30:0], spi_master_sdi0_i};
+                    end
+                    if (frame_sclk_count == 39) begin
+                        `uvm_info("SPI_READ_ID_OBS", $sformatf("response=0x%08h", read_id_response), UVM_LOW)
+                    end
+                    frame_sclk_count++;
+                end
+                if (spi_master_csn0_o === 1'b0 &&
+                    (spi_master_sdi0_i === 1'b0 || spi_master_sdi0_i === 1'b1) &&
+                    response_count < 16) begin
+                    `uvm_info("SPI_RESPONSE_OBS", $sformatf("sample[%0d] mode=%0b dq1=%b miso=%b sdi0=%b",
+                        response_count, spi_master_mode_o,
+                        spi_master_vif.dq1, spi_master_vif.miso[0], spi_master_sdi0_i), UVM_LOW)
+                    response_count++;
+                end
+            end
+        join_none
+
+        forever begin
+            logic [63:0] mosi_bits = '0;
+            logic [63:0] miso_bits = '0;
+            logic [63:0] dq0_bits = '0;
+            logic [63:0] dq1_bits = '0;
+            int bit_count = 0;
+
+            @(spi_master_csn0_o);
+            if (spi_master_csn0_o !== 1'b0) begin
+                continue;
+            end
+
+            while (spi_master_csn0_o === 1'b0 && bit_count < 64) begin
+                @(posedge spi_master_clk_o);
+                mosi_bits = {mosi_bits[62:0], spi_master_vif.mosi[0]};
+                miso_bits = {miso_bits[62:0], spi_master_vif.miso[0]};
+                dq0_bits = {dq0_bits[62:0], spi_master_vif.dq0};
+                dq1_bits = {dq1_bits[62:0], spi_master_vif.dq1};
+                bit_count++;
+            end
+
+            `uvm_info("SPI_VIP_PINS", $sformatf(
+                "frame=%0d mode=%0b sampled_bits=%0d mosi=0x%016h miso=0x%016h dq0=0x%016h dq1=0x%016h",
+                frame_count, spi_master_mode_o, bit_count, mosi_bits, miso_bits, dq0_bits, dq1_bits), UVM_LOW)
+            frame_count++;
+        end
+    end
+`endif
 
     // SPI Slave Connections (QSPI 4-bit)
     assign spi_clk_i              = spi_slave_vif.sclk;
@@ -433,6 +558,18 @@ module tb_top;
     end
 
     // ============================================
+    // Boot delay bypass (Fast-forward)
+    // ============================================
+    initial begin
+        wait (dut.core_region_i.CORE.RISCV_CORE.id_stage_i.hwloop_regs_i.hwlp_counter_q[1] >= 2990);
+        repeat(40) @(posedge clk);
+        `uvm_info("TB", "FAST-FORWARD: Detected SPI boot delay loop. Forcing hwloop counter to exit...", UVM_LOW)
+        force dut.core_region_i.CORE.RISCV_CORE.id_stage_i.hwloop_regs_i.hwlp_counter_q[1] = 1;
+        repeat(10) @(posedge clk);
+        release dut.core_region_i.CORE.RISCV_CORE.id_stage_i.hwloop_regs_i.hwlp_counter_q[1];
+    end
+
+    // ============================================
     // Watchdog Timer
     // ============================================
     int unsigned timeout_ns;
@@ -454,11 +591,13 @@ module tb_top;
                 fsdb_file = "novas.fsdb";
             $fsdbDumpfile(fsdb_file);
             $fsdbDumpvars(0, tb_top);
-            $display("[TB] FSDB dump enabled: %s", fsdb_file);
+            $fsdbDumpMDA(0, tb_top);
+            `uvm_info("TB", $sformatf("FSDB dump enabled: %s", fsdb_file), UVM_LOW)
             `else
-            $display("[TB] WARNING: DUMP_WAVE requested but FSDB_DUMP not defined.");
+            `uvm_warning("TB", "DUMP_WAVE requested but FSDB_DUMP not defined.")
             `endif
         end
     end
+
 
 endmodule

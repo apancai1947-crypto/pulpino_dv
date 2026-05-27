@@ -280,6 +280,7 @@ tests/base_test.sv
 tests/pulpino_uart_test.sv
 tests/pulpino_spi_test.sv
 tests/pulpino_spi_boot_test.sv
+tests/pulpino_spi_flash_read_test.sv
 
 // Testbench top
 tb/tb_top.sv

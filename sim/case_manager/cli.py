@@ -16,19 +16,25 @@ def parse_args(argv=None):
     # Filtering
     parser.add_argument("--tag", default=None, help="Filter tests by tag")
 
-    # Listing
+    # Listing and Cleaning
     parser.add_argument("--list", action="store_true", dest="list_tests",
                         help="List all available tests")
+    parser.add_argument("-c", "--clean", action="store_true",
+                        help="Clean the test directory and its build directory for specified cases")
 
     # Execution control
     parser.add_argument("--dry-run", action="store_true",
                         help="Print commands without executing")
     parser.add_argument("-j", type=int, default=10,
                         help="Parallel job count (default: 10)")
+    parser.add_argument("--timeout", type=int, default=None,
+                        help="Simulation timeout in seconds (default: unlimited)")
 
     # Output
     parser.add_argument("-o", default="debug",
                         help="Output directory (default: debug)")
+    parser.add_argument("-R", "--rename", default=None,
+                        help="Rename the test execution directory (only works when running a single test)")
 
     # Global switches
     parser.add_argument("--cov", action="store_true",

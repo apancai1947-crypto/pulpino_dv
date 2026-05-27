@@ -73,6 +73,31 @@ def main():
     # Make output dir absolute (relative to project root, not sim/)
     out_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", args.o))
 
+    # Clean
+    if args.clean:
+        import shutil
+        from case_manager.runner import compute_build_hash, get_global_opts
+        
+        global_vlog_opts, _ = get_global_opts(args)
+        
+        cleaned_builds = set()
+        for test_cls in tests_to_run.values():
+            target_name = args.rename if (args.rename and len(tests_to_run) == 1) else test_cls.name
+            test_dir = os.path.join(out_dir, target_name)
+            if os.path.exists(test_dir):
+                shutil.rmtree(test_dir)
+                print(f"[CLEAN] Removed test directory: {test_dir}")
+                
+            build_cls = test_cls.build
+            if build_cls:
+                build_hash = compute_build_hash(build_cls, global_vlog_opts)
+                build_dir = os.path.join(out_dir, f".{build_hash}")
+                if build_dir not in cleaned_builds and os.path.exists(build_dir):
+                    shutil.rmtree(build_dir)
+                    cleaned_builds.add(build_dir)
+                    print(f"[CLEAN] Removed build directory: {build_dir}")
+        print(f"\n[CLEAN] Done, starting simulation...")
+
     # Run
     success = run_all(tests_to_run, out_dir, args, args.extra)
     sys.exit(0 if success else 1)

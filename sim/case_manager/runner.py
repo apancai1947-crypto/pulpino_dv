@@ -141,13 +141,14 @@ def validate_sim_opt(sim_opt):
 
 
 def run_test(test_cls, build_dir, out_dir, global_sim_opts, extra_opts,
-             dry_run=False, delete_passed=False, dump=False):
+             dry_run=False, delete_passed=False, dump=False, rename_dir=None,
+             timeout_sec=None, stream_output=False):
     """Run a single test case.
 
     Returns: (test_name, "PASS"|"FAIL", message)
     """
     test_name = test_cls.name
-    test_dir = os.path.join(out_dir, test_name)
+    test_dir = os.path.join(out_dir, rename_dir if rename_dir else test_name)
     os.makedirs(test_dir, exist_ok=True)
 
     # Copy simv and simv.daidir from build to test directory
@@ -192,7 +193,7 @@ def run_test(test_cls, build_dir, out_dir, global_sim_opts, extra_opts,
     sim_cmd = (
         f"cd {test_dir} && "
         f"DESIGNWARE_HOME=/usr/Synopsys/vip_2018_09 "
-        f"./simv "
+        f"./simv +DESIGNWARE_HOME=/usr/Synopsys/vip_2018_09 "
         f"{sim_opt_clean} "
         f"{uvm_test_arg} "
         f"{fw_opts} "
@@ -219,29 +220,49 @@ def run_test(test_cls, build_dir, out_dir, global_sim_opts, extra_opts,
     # VCS simv may become a zombie after $finish, so we monitor the log
     status = "FAIL"
     msg = ""
-    timeout_sec = 300
     elapsed = 0
-    while elapsed < timeout_sec:
+    log_pos = 0
+
+    while True:
+        if timeout_sec is not None and elapsed >= timeout_sec:
+            print(f"\n[SIM] [{test_name}] TIMEOUT ({timeout_sec}s), killing simulation process...")
+            proc.kill()
+            proc.wait()
+            msg = "simulation timed out"
+            break
+
         ret = proc.poll()
+        
+        # Read new log content if it exists
+        log_content = ""
+        if os.path.exists(log_path):
+            with open(log_path, "r") as f:
+                if stream_output:
+                    f.seek(log_pos)
+                    new_data = f.read()
+                    if new_data:
+                        sys.stdout.write(new_data)
+                        sys.stdout.flush()
+                        log_pos = f.tell()
+                f.seek(0)
+                log_content = f.read()
+
         if ret is not None:
             break
-        if os.path.exists(log_path):
-            with open(log_path) as f:
-                log_content = f.read()
-            if "========== TEST PASSED ==========" in log_content or \
-               "========== TEST FAILED ==========" in log_content or \
-               "$finish" in log_content:
-                # Simulation finished, kill any lingering processes
-                proc.kill()
-                proc.wait()
-                break
+
+        if "========== TEST PASSED ==========" in log_content or \
+           "========== TEST FAILED ==========" in log_content or \
+           "$finish" in log_content:
+            if stream_output:
+                print(f"\n[SIM] [{test_name}] Finished (detected in log), killing simulation process...")
+            else:
+                print(f"[SIM] [{test_name}] Finished (detected in log), killing simulation process...")
+            proc.kill()
+            proc.wait()
+            break
+
         time.sleep(1)
         elapsed += 1
-    else:
-        # Timeout - force kill
-        proc.kill()
-        proc.wait()
-        msg = "simulation timed out"
 
     # Determine pass/fail from log
     if os.path.exists(log_path):
@@ -301,8 +322,10 @@ def run_all(tests_to_run, out_dir, args, extra_opts):
         for test_cls in tests_to_run.values():
             build_dir = build_cache.get(test_cls.build)
             if build_dir:
+                rename_dir = args.rename if (args.rename and len(tests_to_run) == 1) else None
                 r = run_test(test_cls, build_dir, out_dir, global_sim_opts,
-                             extra_opts, dry_run=True, dump=args.dump)
+                             extra_opts, dry_run=True, dump=args.dump, rename_dir=rename_dir,
+                             timeout_sec=args.timeout, stream_output=(len(tests_to_run) == 1))
                 results.append(r)
     else:
         with ThreadPoolExecutor(max_workers=args.j) as executor:
@@ -311,11 +334,13 @@ def run_all(tests_to_run, out_dir, args, extra_opts):
                 build_dir = build_cache.get(test_cls.build)
                 if not build_dir:
                     continue
+                rename_dir = args.rename if (args.rename and len(tests_to_run) == 1) else None
                 future = executor.submit(
                     run_test, test_cls, build_dir, out_dir,
                     global_sim_opts, extra_opts,
                     dry_run=False, delete_passed=args.delete_passed_files,
-                    dump=args.dump
+                    dump=args.dump, rename_dir=rename_dir,
+                    timeout_sec=args.timeout, stream_output=(len(tests_to_run) == 1)
                 )
                 futures[future] = test_cls.name
 

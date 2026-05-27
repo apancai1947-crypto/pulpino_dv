@@ -24,6 +24,14 @@ import svt_i2c_uvm_pkg::*;
 
 `include "uvm_macros.svh"
 
+function string getenv(string name);
+    string value;
+    if ($value$plusargs({name, "=%s"}, value)) begin
+        return value;
+    end
+    return "";
+endfunction
+
 class soc_env extends uvm_env;
     `uvm_component_utils(soc_env)
 
@@ -154,6 +162,7 @@ class soc_env extends uvm_env;
             dce_cfg.enable_dtr_dsr_handshake = 0;
             dce_cfg.enable_tx_rx_handshake   = 0;
         end
+        dce_cfg.check_enable = 0;
 
         `uvm_info(get_type_name(), $sformatf(
             "DCE VIP config: data_width=%0d, parity_type=%0d, stop_bit=%0d, hw_hs_disabled=%0b",
@@ -173,37 +182,57 @@ class soc_env extends uvm_env;
 `ifdef SPI_BOOT_EN
             spi_master_cfg.is_active     = 1;           // Active Slave
             spi_master_cfg.frame_format  = svt_spi_types::SPI_FLASH;
+            spi_master_cfg.slave_id      = 0;           // Respond to DUT CS0 / ss_n[0]
+            spi_master_cfg.default_slave = 0;
+            spi_master_cfg.default_master = 0;
             spi_master_cfg.enable_mem_core = 1;
-            spi_master_cfg.spi_mem_cfg = new("spi_mem_cfg");
+            spi_master_cfg.spi_mem_cfg = svt_spi_mem_configuration::type_id::create("spi_mem_cfg");
             // Load Spansion S25FL catalog (sets up flash model internals, timings, etc.)
             begin
                 string dw_home;
-                dw_home = $getenv("DESIGNWARE_HOME");
+                string flash_cfg_file;
+                dw_home = getenv("DESIGNWARE_HOME");
                 if (dw_home.len() == 0) begin
                     // Fallback: probe known paths
                     int fd;
                     dw_home = "/usr/Synopsys/vip_2018_09";
-                    fd = $fopen({dw_home, "/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_HPLC.cfg"}, "r");
+                    fd = $fopen({dw_home, "/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_EHPLC.cfg"}, "r");
                     if (fd)
                         $fclose(fd);
                     else
                         dw_home = "/opt/sv_pkgs/designware_home";
                 end
-                spi_master_cfg.spi_mem_cfg.load_prop_vals({dw_home, "/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_HPLC.cfg"});
-                `uvm_info("ENV", $sformatf("Loaded Spansion catalog from: %s", {dw_home, "/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_HPLC.cfg"}), UVM_LOW)
+                if (!$value$plusargs("SPI_FLASH_CFG=%s", flash_cfg_file))
+                    flash_cfg_file = {dw_home, "/vip/svt/spi_svt/latest/catalog/spi/nor/Spansion/S25FL512S_EHPLC.cfg"};
+                spi_master_cfg.spi_mem_cfg.load_prop_vals(flash_cfg_file);
+                `uvm_info("ENV", $sformatf("Loaded SPI flash catalog from: %s", flash_cfg_file), UVM_LOW)
             end
-            // Override Flash ID for S25FL128S (boot_code.c expects rd_id[0]=0x0102194D)
-            // Response byte order: manufacturer_id, device_id_memory_type, device_id_memory_capacity, device_id
-            spi_master_cfg.spi_mem_cfg.mode_register_cfg.manufacturer_id        = 8'h01;
-            spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_type  = 8'h02;
+            // Apply fast bring-up timing after catalog load, matching the SVT example order.
+            spi_master_cfg.spi_mem_cfg.timing_cfg.tRPH_ns = 350;
+            spi_master_cfg.spi_mem_cfg.timing_cfg.tPU_us  = 0.300;
+            spi_master_cfg.spi_mem_cfg.timing_cfg.tVSL_us = 0.300;
+            // Override the bytes returned by READ_ID (0x9F).  Spansion sources
+            // READ_ID from id_cfi[0:3], while Macronix sources it from the JEDEC
+            // ID fields below.
+            spi_master_cfg.spi_mem_cfg.mode_register_cfg.manufacturer_id = 8'h01;
+            spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_type = 8'h02;
             spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_capacity = 8'h19;
-            spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id              = 8'h4D;
+            spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id = 8'h4D;
+            spi_master_cfg.spi_mem_cfg.mode_register_cfg.id_cfi[0] = 8'h01;
+            spi_master_cfg.spi_mem_cfg.mode_register_cfg.id_cfi[1] = 8'h02;
+            spi_master_cfg.spi_mem_cfg.mode_register_cfg.id_cfi[2] = 8'h19;
+            spi_master_cfg.spi_mem_cfg.mode_register_cfg.id_cfi[3] = 8'h4D;
             `uvm_info("ENV", "SPI Master Agent configured as ACTIVE FLASH SLAVE (SPI Boot Mode)", UVM_LOW)
-            `uvm_info("ENV", $sformatf("Flash ID cfg: mfr=0x%02h type=0x%02h cap=0x%02h dev=0x%02h",
+            `uvm_info("ENV", $sformatf("Flash JEDEC ID cfg: %02h %02h %02h %02h",
                 spi_master_cfg.spi_mem_cfg.mode_register_cfg.manufacturer_id,
                 spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_type,
                 spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id_memory_capacity,
                 spi_master_cfg.spi_mem_cfg.mode_register_cfg.device_id), UVM_LOW)
+            `uvm_info("ENV", $sformatf("Flash id_cfi cfg: %02h %02h %02h %02h",
+                spi_master_cfg.spi_mem_cfg.mode_register_cfg.id_cfi[0],
+                spi_master_cfg.spi_mem_cfg.mode_register_cfg.id_cfi[1],
+                spi_master_cfg.spi_mem_cfg.mode_register_cfg.id_cfi[2],
+                spi_master_cfg.spi_mem_cfg.mode_register_cfg.id_cfi[3]), UVM_LOW)
 `else
             spi_master_cfg.is_active     = 0;           // Passive monitor
             // Standard SPI mode (not Flash): must set frame_format explicitly
@@ -220,7 +249,12 @@ class soc_env extends uvm_env;
             spi_master_cfg.bit_endianness    = svt_spi_types::BIG_ENDIAN;
 
             spi_master_cfg.enable_txrx_reporting = 1;
+            spi_master_cfg.enable_txrx_tracing   = 1;
+            spi_master_cfg.psdisplay_data_size   = 32;
             spi_master_cfg.enable_txrx_chk       = 0;  // Disable Flash protocol checks
+            `uvm_info("ENV", $sformatf("SPI flash cfg valid=%0b slave_id=%0d default_slave=%0d default_master=%0d",
+                spi_master_cfg.is_valid(0), spi_master_cfg.slave_id,
+                spi_master_cfg.default_slave, spi_master_cfg.default_master), UVM_LOW)
 
             uvm_config_db#(svt_spi_agent_configuration)::set(this, "spi_master_agent", "cfg", spi_master_cfg);
             spi_master_agent = svt_spi_agent::type_id::create("spi_master_agent", this);

@@ -26,7 +26,13 @@ class spi_base_build(Build):
 class spi_boot_build(spi_base_build):
     name = "spi_boot"
     tag = ["spi", "boot"]
-    vlog_opt = spi_base_build.vlog_opt + "+define+SPI_BOOT_EN +define+TRACE_PC "
+    vlog_opt = spi_base_build.vlog_opt + "+define+SPI_BOOT_EN "
+
+
+class spi_direct_boot_build(spi_boot_build):
+    name = "spi_direct_boot"
+    tag = ["spi", "direct_boot"]
+    vlog_opt = spi_boot_build.vlog_opt + "+define+SPI_DIRECT_BOOT "
 
 
 # ===== Test 层 =====
@@ -96,6 +102,23 @@ class tc_spi_boot(spi_base_test):
     c_test = "tc_spi_boot"
     extra_make_opt = "BOOT_MODE=1"
     sim_opt = "+TIMEOUT_NS=20000000"
+
+
+# ----- SPI Flash Read (Direct Boot, no Boot ROM) -----
+
+class tc_spi_flash_read(spi_base_test):
+    name = "tc_spi_flash_read"
+    tag = ["spi", "flash_read", "direct_boot", "p0"]
+    build = spi_direct_boot_build
+    uvm_test = "pulpino_spi_flash_read_test"
+    c_test = "tc_spi_flash_read"
+    sim_opt = "+TIMEOUT_NS=20000000"
+    prerun_script = (
+        "make -C {out_dir}/../../c CTEST=tc_spi_flash_read OUT={out_dir}/fw all"
+        " && cp {out_dir}/../../c/tests/spi_tests/tc_spi_flash_read/test_data.memh {out_dir}/fw/test_data.memh"
+        " && cp {out_dir}/fw/firmware.slm {out_dir}/fw/l2_stim.slm"
+        " && echo '@00000000 00000000' > {out_dir}/fw/tcdm_bank0.slm"
+    )
 
 
 class tc_spi_qwr_all_zero(spi_base_test):
