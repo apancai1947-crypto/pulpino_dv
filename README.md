@@ -120,36 +120,39 @@ soc_env
 
 1. Boot address uses default `0x8080` (Boot ROM entry) — not forced
 2. Backdoor memory preload is **skipped**
-3. CPU executes `boot_code.c` from Boot ROM
+3. CPU executes VHDL-replaced `rtl/boot_code.sv` from Boot ROM
 4. `check_spi_flash()` sends READ_ID (`0x9F`) to SPI Flash VIP — expects `0x0102194D`
-5. Boot code reads flash header (32 bytes), copies firmware blocks to instr/data RAM
-6. Jumps to user code (`instr_base = 0x00000000`, CPU address `0x80`)
-7. User code runs and signals EOT via stdout monitor
+5. Boot code issues `0x03` Standard Read (1-line mode for 100% SVT VIP compatibility) to read flash header (32 bytes)
+6. Reads are handled by `spi_read_fifo_swap` which automatically swaps the JEDEC-颠倒 bytes into CPU-native little-endian format
+7. Address variables are shifted left by 8 (`addr << 8`) during `0x03` commands to align with the SPI controller's high 24-bit physical shift-out structure
+8. Boot code copies firmware blocks to instruction and data RAM using `spi_read_fifo_swap` (preventing CPU `Illegal Instruction` due to endianness mismatch)
+9. Jumps to user code (`instr_base = 0x00000000`, CPU address `0x80`)
+10. User code runs and signals EOT via memory-mapped stdout monitor to complete test with `TEST PASSED`
 
 ### Boot ROM Build Toolchain
 
-The Boot ROM is compiled from C source (`repo/pulpino/sw/apps/boot_code/boot_code.c`) using a RISC-V cross-compiler, then converted to a hex file for `$readmemh` loading:
+The Boot ROM is compiled from C source using a RISC-V cross-compiler, then converted to a SystemVerilog module array for compilation. To keep the `repo/pulpino/` submodule read-only and clean, we use a fully isolated software and hardware overlay approach:
 
 ```bash
 # Run inside Docker container with riscv64-linux-gnu-gcc
-docker exec <container> bash -c "cd /root/work/dv-flow/pulpino_dv/tb && bash build_boot_rom.sh"
+docker exec <container> bash -lc "cd /root/work/dv-flow/pulpino_dv && ./scripts/build_boot_rom.sh"
 ```
 
 Build pipeline:
-1. Cross-compile `boot_code.c` + sys_lib (spi.c, uart.c, gpio.c) with `-march=rv32i -mabi=ilp32`
+1. Cross-compile `sw_overlay/boot_code.c` (isolated C source) + sys_lib with `-march=rv32ic -mabi=ilp32` (RVC enabled to compress ROM size down to 447 words, fitting easily inside ROM space)
 2. Link with `link.boot.ld` (ROM at 0x8000, max 8KB)
 3. `objcopy` → S19 record file
-4. `s19toboot_py3.py` → `boot_code.hex` (1024 words) + `boot_code.sv`
+4. `s19toboot_py3.py` (Python 3 compatible S19 → SV converter) → generates overlay `boot_code.sv` array
 
 Key files:
 | File | Purpose |
 |------|---------|
-| `tb/build_boot_rom.sh` | Cross-compile script (runs in Docker) |
-| `tb/s19toboot_py3.py` | S19 → hex/sv converter (`rom_size=1024`) |
-| `tb/boot_code.hex` | ROM content for `$readmemh` (1024 lines) |
-| `tb/boot_code_patched.sv` | Patched ROM module using `$readmemh` (replaces repo's `boot_code.sv`) |
+| [sw_overlay/boot_code.c](file:///d:/learning/verifier/dv-flow/pulpino_dv/sw_overlay/boot_code.c) | Patched C source containing transparent endianness swap and shift logic |
+| [scripts/build_boot_rom.sh](file:///d:/learning/verifier/dv-flow/pulpino_dv/scripts/build_boot_rom.sh) | Cross-compile shell script (runs in Docker) |
+| [scripts/s19toboot_py3.py](file:///d:/learning/verifier/dv-flow/pulpino_dv/scripts/s19toboot_py3.py) | Python 3 compatible S19 → SV converter |
+| [rtl/boot_code.sv](file:///d:/learning/verifier/dv-flow/pulpino_dv/rtl/boot_code.sv) | Patched ROM module with compiled SV array (replaces repo's VHDL ROM) |
 
-The patched `boot_code_patched.sv` replaces the repo's `boot_code.sv` via `sim/filelist.f`, using `$readmemh` to load `boot_code.hex` instead of hardcoding ROM contents in SystemVerilog.
+The overlay `rtl/boot_code.sv` replaces the repo's `boot_code.sv` via `sim/filelist.f` (line 214) to maintain 100% submodule read-only integrity.
 
 ## Project Structure
 
