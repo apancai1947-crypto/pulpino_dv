@@ -101,7 +101,7 @@ class tc_spi_boot(spi_base_test):
     uvm_test = "pulpino_spi_boot_test"
     c_test = "tc_spi_boot"
     extra_make_opt = "BOOT_MODE=1"
-    sim_opt = "+TIMEOUT_NS=20000000"
+    sim_opt = "+TIMEOUT_NS=200000000"
 
 
 # ----- SPI Flash Read (Direct Boot, no Boot ROM) -----

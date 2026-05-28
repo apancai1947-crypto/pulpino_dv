@@ -211,7 +211,7 @@ repo/pulpino/rtl/dp_ram_wrap.sv
 repo/pulpino/rtl/ram_mux.sv
 repo/pulpino/rtl/random_stalls.sv
 repo/pulpino/rtl/boot_rom_wrap.sv
-repo/pulpino/rtl/boot_code.sv
+rtl/boot_code.sv
 repo/pulpino/rtl/core2axi_wrap.sv
 repo/pulpino/rtl/axi_mem_if_SP_wrap.sv
 repo/pulpino/rtl/axi_node_intf_wrap.sv
