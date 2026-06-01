@@ -99,6 +99,100 @@ class tc_uart_tx_continuous_test(uart_base_test):
     c_defines = {"UART_DIVISOR": 31, "NUM_BYTES": 32, "DATA_MODE": 1}
 
 
+class tc_uart_rx_continuous_test(uart_base_test):
+    name = "tc_uart_rx_continuous"
+    tag += ["rx", "continuous"]
+    c_test = "tc_uart_rx_continuous"
+    c_defines = {"UART_DIVISOR": 31, "NUM_BYTES": 32, "DATA_MODE": 1}
+
+
+class tc_uart_frame_8n1_test(uart_base_test):
+    name = "tc_uart_frame_8n1"
+    tag += ["frame", "8n1"]
+    c_test = "tc_uart_frame_8n1"
+    c_defines = {"UART_DIVISOR": 31, "NUM_BYTES": 4, "DATA_MODE": 1}
+    sim_opt += "+UART_DATA_WIDTH=8 +UART_PARITY_TYPE=0 +UART_STOP_BIT=0 "
+
+
+class tc_uart_rx_neq_irq_test(uart_base_test):
+    name = "tc_uart_rx_neq_irq"
+    tag += ["irq", "rx"]
+    c_test = "tc_uart_rx_neq_irq"
+    c_defines = {"UART_DIVISOR": 31, "TX_DATA": 0x36}
+
+
+class tc_uart_fifo_threshold_test(uart_base_test):
+    name = "tc_uart_fifo_threshold"
+    tag += ["fifo", "irq", "rx"]
+    c_test = "tc_uart_fifo_threshold"
+    c_defines = {"UART_DIVISOR": 31, "NUM_BYTES": 4, "DATA_MODE": 1}
+
+
+class tc_uart_tx_empty_irq_test(uart_base_test):
+    name = "tc_uart_tx_empty_irq"
+    tag += ["irq", "tx"]
+    c_test = "tc_uart_tx_empty_irq"
+    c_defines = {"UART_DIVISOR": 31, "TX_DATA": 0xC3}
+
+
+class tc_uart_frame_error_test(uart_base_test):
+    name = "tc_uart_frame_error"
+    tag += ["error", "frame"]
+    c_test = "tc_uart_frame_error"
+    c_defines = {"UART_DIVISOR": 31, "TX_DATA": 0x81}
+
+
+class tc_uart_overrun_error_test(uart_base_test):
+    name = "tc_uart_overrun_error"
+    tag += ["error", "overrun"]
+    c_test = "tc_uart_overrun_error"
+    c_defines = {"UART_DIVISOR": 31, "NUM_BYTES": 8, "DATA_MODE": 1}
+
+
+class tc_uart_fake_start_bit_test(uart_base_test):
+    name = "tc_uart_fake_start_bit"
+    tag += ["error", "start"]
+    c_test = "tc_uart_fake_start_bit"
+    c_defines = {"UART_DIVISOR": 31, "TX_DATA": 0x7E}
+
+
+class tc_uart_break_detect_test(uart_base_test):
+    name = "tc_uart_break_detect"
+    tag += ["error", "break"]
+    c_test = "tc_uart_break_detect"
+    c_defines = {"UART_DIVISOR": 31, "TX_DATA": 0x00}
+
+
+class tc_uart_irq_to_plic_test(uart_base_test):
+    name = "tc_uart_irq_to_plic"
+    tag += ["irq", "plic"]
+    c_test = "tc_uart_irq_to_plic"
+    c_defines = {"UART_DIVISOR": 31, "TX_DATA": 0x5C}
+
+
+class tc_uart_multi_peri_concurrent_test(uart_base_test):
+    name = "tc_uart_multi_peri_concurrent"
+    tag += ["integration", "concurrent"]
+    c_test = "tc_uart_multi_peri_concurrent"
+    c_defines = {"UART_DIVISOR": 31, "NUM_BYTES": 8, "DATA_MODE": 1}
+
+
+class tc_uart_long_stress_test(uart_base_test):
+    name = "tc_uart_long_stress"
+    tag += ["stress", "long"]
+    c_test = "tc_uart_long_stress"
+    c_defines = {"UART_DIVISOR": 31, "NUM_BYTES": 256, "DATA_MODE": 2, "UART_TIMEOUT_POLLS": 500000}
+    sim_opt += "+TIMEOUT_NS=200000000 "
+
+
+class tc_uart_max_baud_stress_test(uart_base_test):
+    name = "tc_uart_max_baud_stress"
+    tag += ["stress", "baudrate"]
+    c_test = "tc_uart_max_baud_stress"
+    c_defines = {"UART_DIVISOR": 1, "NUM_BYTES": 64, "DATA_MODE": 2, "UART_TIMEOUT_POLLS": 500000}
+    sim_opt += "+TIMEOUT_NS=100000000 "
+
+
 # 循环生成（需要回环，继承 tc_uart_external_loopback_test）
 import random as _random
 
